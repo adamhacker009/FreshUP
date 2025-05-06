@@ -5,50 +5,37 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use App\Models\SatelliteSource;
-use App\Models\SatelliteFile;
 use Carbon\Carbon;
 
 class FetchAmmoniaData extends Command
 {
-    protected $signature = 'fetch:ammonia';
-    protected $description = 'Fetch ammonia data from AIRS';
+    protected $signature = 'fetch:ammonia {date?}';
+    protected $description = 'Загружает HDF-файл аммиака с Earthdata';
 
     public function handle()
     {
-        $source = SatelliteSource::firstOrCreate([
-            'name' => 'AIRS',
-            'data_type' => 'nh3'
-        ]);
+        $date = $this->argument('date')
+            ? Carbon::parse($this->argument('date'))
+            : now();
 
-        $date = now()->subDay()->format('Y-m-d');
-        $bbox = '30,50,40,60';
+        $year = $date->year;
+        $dayOfYear = str_pad($date->dayOfYear, 3, '0', STR_PAD_LEFT);
+
+        $filename = "AIRSAC3MNH3.{$year}{$dayOfYear}.L3.hdf";
+        $url = "https://data.gesdisc.earthdata.nasa.gov/data/Aqua_AIRS_Level3/AIRSAC3MNH3.003/{$year}/{$dayOfYear}/{$filename}";
+
+        $this->info("Попытка загрузки: {$url}");
 
         $response = Http::withBasicAuth(
-            env('NASA_API_KEY'),
-            ''
-        )->get("https://acdisc.gesdisc.eosdis.nasa.gov/opendap/Aqua_AIRS_Level3/AIRS3STD.007/{$date}/AIRS.{$date}.L3.Std.HDF", [
-            'vars' => 'NH3_Mixing_Ratio_Surrogate',
-            'bbox' => $bbox,
-        ]);
+            env('EARTHDATA_USERNAME'),
+            env('EARTHDATA_PASSWORD')
+        )->get($url);
 
         if ($response->successful()) {
-            $filePath = "satellite_data/airs_nh3_{$date}.hdf";
-            Storage::put($filePath, $response->body());
-
-            SatelliteFile::create([
-                'source_id' => $source->id,
-                'file_path' => $filePath,
-                'status' => 'pending',
-                'metadata' => [
-                    'date' => $date,
-                    'region' => $bbox,
-                ],
-            ]);
-
-            $this->info("Ammonia data for {$date} saved!");
+            Storage::put("satellite_data/{$filename}", $response->body());
+            $this->info("Файл успешно сохранён: satellite_data/{$filename}");
         } else {
-            $this->error("Failed to fetch data: " . $response->status());
+            $this->error("Ошибка загрузки: HTTP {$response->status()}");
         }
     }
 }
