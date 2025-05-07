@@ -23,7 +23,8 @@ RUN pip3 install --no-cache-dir \
     netCDF4 \
     pandas \
     xarray \
-    h5py
+    h5py \
+    requests
 
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
